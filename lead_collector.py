@@ -67,21 +67,40 @@ class CountryScope:
     code: str
     name: str
     aliases: tuple[str, ...]
+    bounds: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 SUPPORTED_COUNTRIES = (
-    CountryScope("US", "USA", ("usa", "us", "united states", "сша")),
+    CountryScope("US", "USA", ("usa", "us", "united states", "сша"),
+                 bounds=(-125.0, 24.5, -66.9, 49.4)),
     CountryScope(
-        "GB", "UK", ("uk", "gb", "united kingdom", "great britain", "великобританія")
+        "GB", "UK", ("uk", "gb", "united kingdom", "great britain", "великобританія"),
+        bounds=(-8.2, 49.9, 1.8, 60.9),
     ),
-    CountryScope("DE", "Germany", ("germany", "de", "deutschland", "німеччина")),
-    CountryScope("FR", "France", ("france", "fr", "франція")),
-    CountryScope("ES", "Spain", ("spain", "es", "españa", "іспанія")),
-    CountryScope("IT", "Italy", ("italy", "it", "italia", "італія")),
-    CountryScope("NL", "Netherlands", ("netherlands", "nl", "holland", "нідерланди")),
-    CountryScope("PL", "Poland", ("poland", "pl", "polska", "польща")),
-    CountryScope("UA", "Ukraine", ("ukraine", "ua", "україна")),
+    CountryScope("DE", "Germany", ("germany", "de", "deutschland", "німеччина"),
+                 bounds=(5.9, 47.3, 15.0, 55.1)),
+    CountryScope("FR", "France", ("france", "fr", "франція"),
+                 bounds=(-5.1, 41.3, 9.6, 51.1)),
+    CountryScope("ES", "Spain", ("spain", "es", "españa", "іспанія"),
+                 bounds=(-9.3, 36.0, 3.3, 43.8)),
+    CountryScope("IT", "Italy", ("italy", "it", "italia", "італія"),
+                 bounds=(6.6, 36.6, 18.5, 47.1)),
+    CountryScope("NL", "Netherlands", ("netherlands", "nl", "holland", "нідерланди"),
+                 bounds=(3.4, 50.8, 7.2, 53.5)),
+    CountryScope("PL", "Poland", ("poland", "pl", "polska", "польща"),
+                 bounds=(14.1, 49.0, 24.2, 54.8)),
+    CountryScope("UA", "Ukraine", ("ukraine", "ua", "україна"),
+                 bounds=(22.0, 44.0, 40.5, 52.6)),
 )
+
+
+def country_bounds(country_code: str) -> tuple[float, float, float, float] | None:
+    """Return hardcoded bounding box for a supported country, or None."""
+    code_upper = country_code.upper()
+    for country in SUPPORTED_COUNTRIES:
+        if country.code == code_upper:
+            return country.bounds
+    return None
 
 CAR_SERVICE_CATEGORIES = (
     "automotive_services_and_repair",
@@ -129,7 +148,13 @@ NICHE_ALIASES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "кафе": (("cafe", "coffee_shop"), ()),
     "cafe": (("cafe", "coffee_shop"), ()),
     "кав'ярня": (("cafe", "coffee_shop"), ()),
-    "кав’ярня": (("cafe", "coffee_shop"), ()),
+    "кав\u02bcярня": (("cafe", "coffee_shop"), ()),
+    "кав'ярні": (("cafe", "coffee_shop"), ()),
+    "кав\u02bcярні": (("cafe", "coffee_shop"), ()),
+    "coffee shop": (("cafe", "coffee_shop"), ()),
+    "coffeeshop": (("cafe", "coffee_shop"), ()),
+    "кофейня": (("cafe", "coffee_shop"), ()),
+    "кофейни": (("cafe", "coffee_shop"), ()),
     "ресторан": (("restaurant",), ("%restaurant%",)),
     "restaurant": (("restaurant",), ("%restaurant%",)),
     "готель": (("hotel", "motel", "hostel"), ()),
@@ -247,6 +272,53 @@ NICHE_ALIASES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "суші": (("sushi_restaurant",), ()),
     "фастфуд": (("fast_food_restaurant",), ()),
     "бар": (("bar",), ()),
+    # --- Логістика та перевезення ---
+    "логістична компанія": (("logistics_service", "freight_forwarding", "shipping_and_mailing_service"), ()),
+    "логістика": (("logistics_service", "freight_forwarding", "shipping_and_mailing_service"), ()),
+    "вантажні перевезення": (("moving_and_storage_service", "trucking_company", "freight_forwarding"), ()),
+    "вантажоперевезення": (("moving_and_storage_service", "trucking_company", "freight_forwarding"), ()),
+    "перевезення": (("moving_and_storage_service", "trucking_company"), ()),
+    # --- Будівництво та ремонт (розширення) ---
+    "вікна": (("window_installation_service", "window_supplier"), ()),
+    "двері": (("door_shop", "door_supplier"), ()),
+    "вікна і двері": (("window_installation_service", "window_supplier", "door_shop", "door_supplier"), ()),
+    "опалення": (("heating_equipment_supplier", "hvac_contractor"), ()),
+    "системи опалення": (("heating_equipment_supplier", "hvac_contractor"), ()),
+    "котли": (("heating_equipment_supplier",), ()),
+    "кондиціонування": (("air_conditioning_contractor", "hvac_contractor"), ()),
+    "кондиціонер": (("air_conditioning_contractor", "hvac_contractor"), ()),
+    "вентиляція": (("air_conditioning_contractor", "hvac_contractor"), ()),
+    "hvac": (("hvac_contractor", "air_conditioning_contractor", "heating_equipment_supplier"), ()),
+    "сонячні панелі": (("solar_energy_company", "solar_panel_installer"), ()),
+    "сонячні електростанції": (("solar_energy_company", "solar_panel_installer"), ()),
+    "солнечные панели": (("solar_energy_company", "solar_panel_installer"), ()),
+    "solar": (("solar_energy_company", "solar_panel_installer"), ()),
+    # --- Архітектура ---
+    "архітектурне бюро": (("architect", "architectural_firm"), ()),
+    "архітектор": (("architect", "architectural_firm"), ()),
+    "architect": (("architect", "architectural_firm"), ()),
+    # --- Меблі / кухні ---
+    "кухні на замовлення": (("kitchen_remodeler", "kitchen_furniture_store"), ()),
+    "кухні": (("kitchen_remodeler", "kitchen_furniture_store"), ()),
+    "меблева студія": (("furniture_store", "kitchen_furniture_store"), ()),
+    # --- Авто ---
+    "автошкола": (("driving_school",), ()),
+    "автошколи": (("driving_school",), ()),
+    "driving school": (("driving_school",), ()),
+    # --- Фінанси та консалтинг ---
+    "фінансова компанія": (("financial_service", "loan_agency"), ()),
+    "кредитна компанія": (("loan_agency", "financial_service"), ()),
+    "фінансові послуги": (("financial_service",), ()),
+    "консалтингова компанія": (("business_consultant", "management_consultant", "consulting_firm"), ()),
+    "консалтинг": (("business_consultant", "management_consultant", "consulting_firm"), ()),
+    "бізнес-консультант": (("business_consultant", "management_consultant"), ()),
+    # --- IT (розширення) ---
+    "it аутсорсинг": (("software_development", "it_service"), ()),
+    "іт аутсорсинг": (("software_development", "it_service"), ()),
+    # --- Оптова торгівля ---
+    "оптова компанія": (("wholesaler", "wholesale_store"), ()),
+    "оптовий магазин": (("wholesaler", "wholesale_store"), ()),
+    "опт": (("wholesaler", "wholesale_store"), ()),
 }
 
 ADDITIONAL_NICHE_GROUPS: tuple[
@@ -525,6 +597,18 @@ SUPPORTED_NICHE_OPTIONS = (
     "юрист",
     "будівельна компанія",
     "агентство нерухомості",
+    "логістична компанія",
+    "вантажні перевезення",
+    "вікна і двері",
+    "системи опалення",
+    "кондиціонування",
+    "сонячні панелі",
+    "архітектурне бюро",
+    "кухні на замовлення",
+    "автошкола",
+    "фінансова компанія",
+    "консалтингова компанія",
+    "оптова компанія",
 )
 
 NICHE_FILLER_WORDS = frozenset(

@@ -168,16 +168,28 @@ class LeadPipeline:
 
             connection = collector.open_overture()
             try:
-                region_only_search = not parsed_cities
-                search_areas = parsed_cities or [region]
-                for city in search_areas:
-                    if not city:
-                        raise ValueError("Потрібно вказати місто або регіон для пошуку.")
+                region_only_search = not parsed_cities and bool(region)
+                country_only_search = not parsed_cities and not region
+
+                if country_only_search:
+                    search_areas = [country_name or country_code or ""]
+                else:
+                    search_areas = parsed_cities or [region]
+
+                for area in search_areas:
                     if (
                         country_code == collector.UKRAINE_COUNTRY_CODE
-                        and collector.is_ukraine_scope(city)
+                        and collector.is_ukraine_scope(area)
                     ):
                         bounds = collector.UKRAINE_BOUNDS
+                        query_country_code = country_code
+                    elif country_only_search and country_code:
+                        cb = collector.country_bounds(country_code)
+                        if cb is None:
+                            raise ValueError(
+                                f"Немає захардкоджених меж для країни {country_code}."
+                            )
+                        bounds = cb
                         query_country_code = country_code
                     elif country_code:
                         if region_only_search:
@@ -188,22 +200,22 @@ class LeadPipeline:
                             )
                         else:
                             bounds = self._geocode_city(
-                                city,
+                                area,
                                 country_code=country_code,
                                 country_name=country_name,
                                 region=region,
                             )
                         query_country_code = country_code
-                    elif collector.is_ukraine_scope(city):
+                    elif collector.is_ukraine_scope(area):
                         bounds = collector.UKRAINE_BOUNDS
                         query_country_code = collector.UKRAINE_COUNTRY_CODE
                     else:
-                        bounds = self._geocode_city(city)
+                        bounds = self._geocode_city(area)
                         query_country_code = None
                     city_leads = collector.fetch_places(
                         connection,
                         release,
-                        city,
+                        area,
                         bounds,
                         exact_categories,
                         category_patterns,
@@ -212,8 +224,8 @@ class LeadPipeline:
                         region=region,
                     )
                     logger.info(
-                        "Lead search city complete: city=%r fetched=%d",
-                        city,
+                        "Lead search area complete: area=%r fetched=%d",
+                        area,
                         len(city_leads),
                     )
                     all_leads.extend(city_leads)

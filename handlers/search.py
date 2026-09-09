@@ -287,12 +287,6 @@ async def receive_cities(message: Message, state: FSMContext) -> None:
     raw_cities = (message.text or "").strip()
     data = await state.get_data()
     if raw_cities == "Пропустити міста":
-        if not data.get("region"):
-            await message.answer(
-                "Щоб пропустити міста, спочатку вкажіть штат або регіон. "
-                "Або введіть місто."
-            )
-            return
         cities: list[str] = []
     else:
         try:
@@ -335,11 +329,19 @@ async def receive_limit(message: Message, state: FSMContext) -> None:
     await state.update_data(limit=limit)
     data = await state.get_data()
     await state.set_state(SearchForm.confirm)
+    region_display = data['region'] or ''
+    cities_display = ', '.join(data['cities'])
+    if cities_display:
+        scope_display = cities_display
+    elif region_display:
+        scope_display = f'усі в регіоні {region_display}'
+    else:
+        scope_display = f'уся країна ({data["country_name"]})'
     await message.answer(
         "<b>Перевірте параметри</b>\n"
         f"Країна: {html.escape(data['country_name'])}\n"
-        f"Регіон: {html.escape(data['region'] or '—')}\n"
-        f"Міста: {html.escape(', '.join(data['cities']) or 'усі в регіоні')}\n"
+        f"Регіон: {html.escape(region_display or '—')}\n"
+        f"Scope: {html.escape(scope_display)}\n"
         f"Ніша: {html.escape(data['niche'])}\n"
         f"Ліміт: {limit}",
         reply_markup=confirm_keyboard(),
