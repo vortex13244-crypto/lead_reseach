@@ -30,18 +30,24 @@ logger = logging.getLogger(__name__)
 STAC_CATALOG = "https://stac.overturemaps.org/"
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "minimal-overture-lead-collector/1.0"
-UKRAINE_SCOPE_NAME = "Вся Україна"
+WHOLE_COUNTRY_SCOPE_NAME = "Уся країна"
+UKRAINE_SCOPE_NAME = WHOLE_COUNTRY_SCOPE_NAME
 UKRAINE_COUNTRY_CODE = "UA"
 UKRAINE_BOUNDS = (22.0, 44.0, 40.5, 52.6)
-UKRAINE_SCOPE_ALIASES = frozenset(
+WHOLE_COUNTRY_SCOPE_ALIASES = frozenset(
     {
+        "уся країна",
+        "вся країна",
         "вся україна",
         "україна",
         "по всій україні",
         "ukraine",
         "all ukraine",
+        "whole country",
+        "all country",
     }
 )
+UKRAINE_SCOPE_ALIASES = WHOLE_COUNTRY_SCOPE_ALIASES
 
 CSV_FIELDS = (
     "name",
@@ -838,8 +844,12 @@ def niche_coverage_warning(niche: str) -> str | None:
     return None
 
 
+def is_whole_country_scope(value: str) -> bool:
+    return normalize_text(value) in WHOLE_COUNTRY_SCOPE_ALIASES
+
+
 def is_ukraine_scope(value: str) -> bool:
-    return normalize_text(value) in UKRAINE_SCOPE_ALIASES
+    return is_whole_country_scope(value)
 
 
 def parse_cities(value: str) -> list[str]:
@@ -848,8 +858,8 @@ def parse_cities(value: str) -> list[str]:
     for item in value.split(","):
         city = item.strip()
         key = normalize_text(city)
-        if is_ukraine_scope(city):
-            return [UKRAINE_SCOPE_NAME]
+        if is_whole_country_scope(city):
+            return [WHOLE_COUNTRY_SCOPE_NAME]
         if city and key not in seen:
             cities.append(city)
             seen.add(key)
@@ -1067,6 +1077,8 @@ def _build_places_query(
     category_patterns: tuple[str, ...],
     candidate_limit: int,
     country_code: str | None,
+    *,
+    instagram_only: bool = False,
 ) -> tuple[str, list[Any]]:
     parquet_path = (
         f"s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*"
@@ -1081,6 +1093,11 @@ def _build_places_query(
         country_clause = "AND addresses[1].country = ?"
         country_parameters.append(country_code)
     city_expression = "COALESCE(addresses[1].locality, ?)" if country_code else "?"
+    instagram_clause = (
+        "AND array_to_string(websites, ', ') ILIKE '%instagram.com%'"
+        if instagram_only
+        else ""
+    )
 
     query = f"""
         SELECT
@@ -1102,6 +1119,7 @@ def _build_places_query(
         WHERE bbox.xmin BETWEEN ? AND ?
           AND bbox.ymin BETWEEN ? AND ?
           {country_clause}
+          {instagram_clause}
           AND ({category_filter})
           AND COALESCE(operating_status, 'open') <> 'permanently_closed'
           AND names.primary IS NOT NULL
@@ -1368,6 +1386,7 @@ def fetch_places(
     region: str = "",
     *,
     diagnostics: bool = False,
+    instagram_only: bool = False,
 ) -> list[dict[str, Any]]:
     query, parameters = _build_places_query(
         release,
@@ -1379,6 +1398,7 @@ def fetch_places(
         category_patterns,
         candidate_limit,
         country_code,
+        instagram_only=instagram_only,
     )
     logger.info(
         "Overture query: city=%r release=%s sql=%s parameters=%r",

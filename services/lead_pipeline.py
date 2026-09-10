@@ -76,6 +76,7 @@ class LeadPipeline:
         country_code: str | None = None,
         country_name: str = "",
         region: str = "",
+        instagram_only: bool = False,
     ) -> SearchResult:
         async with self._state_lock:
             if user_id in self._running_users:
@@ -94,6 +95,7 @@ class LeadPipeline:
                 country_code,
                 country_name,
                 region,
+                instagram_only=instagram_only,
             )
             previous = self._sessions.get(user_id)
             self._sessions[user_id] = result
@@ -152,6 +154,7 @@ class LeadPipeline:
         country_code: str | None = None,
         country_name: str = "",
         region: str = "",
+        instagram_only: bool = False,
     ) -> SearchResult:
         run_dir = self.temp_root / str(user_id) / uuid.uuid4().hex
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -222,6 +225,7 @@ class LeadPipeline:
                         candidate_limit,
                         country_code=query_country_code,
                         region=region,
+                        instagram_only=instagram_only,
                     )
                     logger.info(
                         "Lead search area complete: area=%r fetched=%d",

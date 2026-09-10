@@ -26,6 +26,7 @@ from aiogram.types import (
 
 import lead_collector as collector
 from lead_scorer import LEAD_TYPES
+from locations import TOP_LOCATIONS
 from services.instagram_enrichment import InstagramEnrichmentService
 from services.lead_pipeline import (
     LeadPipeline,
@@ -57,6 +58,7 @@ class SearchForm(StatesGroup):
     cities = State()
     niche = State()
     limit = State()
+    instagram_only = State()
     confirm = State()
 
 
@@ -97,12 +99,33 @@ def main_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def cities_keyboard() -> ReplyKeyboardMarkup:
+def cities_keyboard(
+    country_code: str | None = None, region: str = ""
+) -> ReplyKeyboardMarkup:
+    buttons: list[KeyboardButton] = []
+    if country_code and region and country_code in TOP_LOCATIONS:
+        country_regions = TOP_LOCATIONS[country_code]
+        cities_list = country_regions.get(region)
+        if not cities_list:
+            for r_name, c_list in country_regions.items():
+                if r_name.lower() == region.lower():
+                    cities_list = c_list
+                    break
+        if cities_list:
+            for city in cities_list:
+                buttons.append(KeyboardButton(text=city))
+
+    keyboard: list[list[KeyboardButton]] = [
+        buttons[i : i + 2] for i in range(0, len(buttons), 2)
+    ]
+    keyboard.append(
+        [
+            KeyboardButton(text="Пропустити міста"),
+            KeyboardButton(text=collector.WHOLE_COUNTRY_SCOPE_NAME),
+        ]
+    )
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Пропустити міста")],
-            [KeyboardButton(text=collector.UKRAINE_SCOPE_NAME)],
-        ],
+        keyboard=keyboard,
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -119,9 +142,31 @@ def country_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def region_keyboard() -> ReplyKeyboardMarkup:
+def region_keyboard(country_code: str | None = None) -> ReplyKeyboardMarkup:
+    buttons: list[KeyboardButton] = []
+    if country_code and country_code in TOP_LOCATIONS:
+        for reg in TOP_LOCATIONS[country_code].keys():
+            buttons.append(KeyboardButton(text=reg))
+
+    keyboard: list[list[KeyboardButton]] = [
+        buttons[i : i + 2] for i in range(0, len(buttons), 2)
+    ]
+    keyboard.append([KeyboardButton(text="Пропустити регіон")])
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Пропустити регіон")]],
+        keyboard=keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def instagram_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="Всі компанії"),
+                KeyboardButton(text="Тільки з Instagram"),
+            ]
+        ],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -262,9 +307,9 @@ async def receive_country(message: Message, state: FSMContext) -> None:
     await state.update_data(country_code=country.code, country_name=country.name)
     await state.set_state(SearchForm.region)
     await message.answer(
-        "Введіть штат або регіон (наприклад, California). "
+        "Оберіть або введіть штат / регіон (наприклад, California). "
         "Або натисніть «Пропустити регіон».",
-        reply_markup=region_keyboard(),
+        reply_markup=region_keyboard(country.code),
     )
 
 
@@ -274,23 +319,30 @@ async def receive_region(message: Message, state: FSMContext) -> None:
     if region == "Пропустити регіон":
         region = ""
     await state.update_data(region=region)
+    data = await state.get_data()
+    country_code = data.get("country_code")
     await state.set_state(SearchForm.cities)
     await message.answer(
-        "Введіть одне або кілька міст через кому. "
+        "Оберіть місто, або введіть одне чи кілька через кому. "
         "Або натисніть «Пропустити міста», щоб шукати по всьому регіону.",
-        reply_markup=cities_keyboard(),
+        reply_markup=cities_keyboard(country_code, region),
     )
 
 
 @router.message(SearchForm.cities)
 async def receive_cities(message: Message, state: FSMContext) -> None:
     raw_cities = (message.text or "").strip()
-    data = await state.get_data()
     if raw_cities == "Пропустити міста":
         cities: list[str] = []
+    elif raw_cities == collector.WHOLE_COUNTRY_SCOPE_NAME:
+        cities = []
+        await state.update_data(region="")
     else:
         try:
             cities = collector.parse_cities(raw_cities)
+            if cities == [collector.WHOLE_COUNTRY_SCOPE_NAME]:
+                cities = []
+                await state.update_data(region="")
         except ValueError as error:
             await message.answer(f"Некоректний список міст: {error}")
             return
@@ -327,6 +379,18 @@ async def receive_limit(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(limit=limit)
+    await state.set_state(SearchForm.instagram_only)
+    await message.answer(
+        "Шукати тільки компанії з Instagram чи показувати всі?",
+        reply_markup=instagram_keyboard(),
+    )
+
+
+@router.message(SearchForm.instagram_only)
+async def receive_instagram_only(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip().lower()
+    instagram_only = "тільки з instagram" in text or ("instagram" in text and "всі" not in text)
+    await state.update_data(instagram_only=instagram_only)
     data = await state.get_data()
     await state.set_state(SearchForm.confirm)
     region_display = data['region'] or ''
@@ -337,13 +401,15 @@ async def receive_limit(message: Message, state: FSMContext) -> None:
         scope_display = f'усі в регіоні {region_display}'
     else:
         scope_display = f'уся країна ({data["country_name"]})'
+    ig_filter_display = "Тільки з Instagram" if instagram_only else "Всі компанії"
     await message.answer(
         "<b>Перевірте параметри</b>\n"
         f"Країна: {html.escape(data['country_name'])}\n"
         f"Регіон: {html.escape(region_display or '—')}\n"
         f"Scope: {html.escape(scope_display)}\n"
         f"Ніша: {html.escape(data['niche'])}\n"
-        f"Ліміт: {limit}",
+        f"Фільтр: {ig_filter_display}\n"
+        f"Ліміт: {data['limit']}",
         reply_markup=confirm_keyboard(),
     )
 
@@ -409,6 +475,7 @@ async def run_search_in_background(
     country_code: str | None = None,
     country_name: str = "",
     region: str = "",
+    instagram_only: bool = False,
 ) -> None:
     try:
         result = await pipeline.run(
@@ -419,6 +486,7 @@ async def run_search_in_background(
             country_code=country_code,
             country_name=country_name,
             region=region,
+            instagram_only=instagram_only,
         )
         await send_search_result(message, result, instagram_enrichment)
     except SearchAlreadyRunningError:
@@ -471,6 +539,7 @@ async def run_search(
             country_code=data["country_code"],
             country_name=data["country_name"],
             region=data["region"],
+            instagram_only=data.get("instagram_only", False),
         )
     )
     background_tasks.add(task)
