@@ -75,6 +75,7 @@ class LeadPipeline:
         *,
         country_code: str | None = None,
         country_name: str = "",
+        regions: list[str] | None = None,
         region: str = "",
         instagram_only: bool = False,
     ) -> SearchResult:
@@ -94,6 +95,7 @@ class LeadPipeline:
                 limit,
                 country_code,
                 country_name,
+                regions,
                 region,
                 instagram_only=instagram_only,
             )
@@ -153,6 +155,7 @@ class LeadPipeline:
         limit: int,
         country_code: str | None = None,
         country_name: str = "",
+        regions: list[str] | None = None,
         region: str = "",
         instagram_only: bool = False,
     ) -> SearchResult:
@@ -162,6 +165,9 @@ class LeadPipeline:
         scored_csv = run_dir / "scored_leads.csv"
 
         try:
+            parsed_regions = [
+                r.strip() for r in (regions or ([region] if region else [])) if r.strip()
+            ]
             parsed_cities = collector.parse_cities(",".join(cities)) if cities else []
             exact_categories, category_patterns = collector.niche_filter(niche)
             collector.log_niche_resolution(niche, exact_categories, category_patterns)
@@ -171,22 +177,95 @@ class LeadPipeline:
 
             connection = collector.open_overture()
             try:
-                region_only_search = not parsed_cities and bool(region)
-                country_only_search = not parsed_cities and not region
+                if parsed_cities:
+                    primary_region = (
+                        parsed_regions[0] if len(parsed_regions) == 1 else ""
+                    )
+                    for city in parsed_cities:
+                        if (
+                            country_code == collector.UKRAINE_COUNTRY_CODE
+                            and collector.is_ukraine_scope(city)
+                        ):
+                            bounds = collector.UKRAINE_BOUNDS
+                            query_country_code = country_code
+                        elif country_code:
+                            bounds = self._geocode_city(
+                                city,
+                                country_code=country_code,
+                                country_name=country_name,
+                                region=primary_region,
+                            )
+                            query_country_code = country_code
+                        elif collector.is_ukraine_scope(city):
+                            bounds = collector.UKRAINE_BOUNDS
+                            query_country_code = collector.UKRAINE_COUNTRY_CODE
+                        else:
+                            bounds = self._geocode_city(city)
+                            query_country_code = None
 
-                if country_only_search:
-                    search_areas = [country_name or country_code or ""]
+                        city_leads = collector.fetch_places(
+                            connection,
+                            release,
+                            city,
+                            bounds,
+                            exact_categories,
+                            category_patterns,
+                            candidate_limit,
+                            country_code=query_country_code,
+                            region=primary_region,
+                            instagram_only=instagram_only,
+                        )
+                        logger.info(
+                            "Lead search city complete: city=%r fetched=%d",
+                            city,
+                            len(city_leads),
+                        )
+                        all_leads.extend(city_leads)
+
+                elif parsed_regions:
+                    for reg in parsed_regions:
+                        if (
+                            country_code == collector.UKRAINE_COUNTRY_CODE
+                            and collector.is_ukraine_scope(reg)
+                        ):
+                            bounds = collector.UKRAINE_BOUNDS
+                            query_country_code = country_code
+                        elif country_code:
+                            bounds = self._geocode_region(
+                                reg,
+                                country_code=country_code,
+                                country_name=country_name,
+                            )
+                            query_country_code = country_code
+                        elif collector.is_ukraine_scope(reg):
+                            bounds = collector.UKRAINE_BOUNDS
+                            query_country_code = collector.UKRAINE_COUNTRY_CODE
+                        else:
+                            bounds = self._geocode_region(reg)
+                            query_country_code = None
+
+                        reg_leads = collector.fetch_places(
+                            connection,
+                            release,
+                            reg,
+                            bounds,
+                            exact_categories,
+                            category_patterns,
+                            candidate_limit,
+                            country_code=query_country_code,
+                            region=reg,
+                            instagram_only=instagram_only,
+                        )
+                        logger.info(
+                            "Lead search region complete: region=%r fetched=%d",
+                            reg,
+                            len(reg_leads),
+                        )
+                        all_leads.extend(reg_leads)
+
                 else:
-                    search_areas = parsed_cities or [region]
-
-                for area in search_areas:
-                    if (
-                        country_code == collector.UKRAINE_COUNTRY_CODE
-                        and collector.is_ukraine_scope(area)
-                    ):
-                        bounds = collector.UKRAINE_BOUNDS
-                        query_country_code = country_code
-                    elif country_only_search and country_code:
+                    area_name = country_name or country_code or ""
+                    if country_code:
                         cb = collector.country_bounds(country_code)
                         if cb is None:
                             raise ValueError(
@@ -194,45 +273,28 @@ class LeadPipeline:
                             )
                         bounds = cb
                         query_country_code = country_code
-                    elif country_code:
-                        if region_only_search:
-                            bounds = self._geocode_region(
-                                region,
-                                country_code=country_code,
-                                country_name=country_name,
-                            )
-                        else:
-                            bounds = self._geocode_city(
-                                area,
-                                country_code=country_code,
-                                country_name=country_name,
-                                region=region,
-                            )
-                        query_country_code = country_code
-                    elif collector.is_ukraine_scope(area):
+                    else:
                         bounds = collector.UKRAINE_BOUNDS
                         query_country_code = collector.UKRAINE_COUNTRY_CODE
-                    else:
-                        bounds = self._geocode_city(area)
-                        query_country_code = None
-                    city_leads = collector.fetch_places(
+
+                    country_leads = collector.fetch_places(
                         connection,
                         release,
-                        area,
+                        area_name,
                         bounds,
                         exact_categories,
                         category_patterns,
                         candidate_limit,
                         country_code=query_country_code,
-                        region=region,
+                        region="",
                         instagram_only=instagram_only,
                     )
                     logger.info(
-                        "Lead search area complete: area=%r fetched=%d",
-                        area,
-                        len(city_leads),
+                        "Lead search country complete: country=%r fetched=%d",
+                        area_name,
+                        len(country_leads),
                     )
-                    all_leads.extend(city_leads)
+                    all_leads.extend(country_leads)
             finally:
                 connection.close()
 
