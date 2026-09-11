@@ -936,6 +936,8 @@ def open_overture() -> duckdb.DuckDBPyConnection:
     connection = duckdb.connect()
     connection.execute("INSTALL httpfs")
     connection.execute("LOAD httpfs")
+    # Cache S3/parquet metadata so repeated queries skip redundant HTTP calls.
+    connection.execute("SET enable_object_cache=true")
     return connection
 
 
@@ -1094,7 +1096,7 @@ def _build_places_query(
         country_parameters.append(country_code)
     city_expression = "COALESCE(addresses[1].locality, ?)" if country_code else "?"
     instagram_clause = (
-        "AND array_to_string(websites, ', ') ILIKE '%instagram.com%'"
+        "AND len(list_filter(COALESCE(websites, []), x -> x ILIKE '%instagram.com%')) > 0"
         if instagram_only
         else ""
     )
@@ -1115,7 +1117,7 @@ def _build_places_query(
             bbox.xmin AS longitude,
             ? AS source_release,
             confidence AS _confidence
-        FROM read_parquet(?)
+        FROM read_parquet(?, hive_partitioning=true)
         WHERE bbox.xmin BETWEEN ? AND ?
           AND bbox.ymin BETWEEN ? AND ?
           {country_clause}
@@ -1124,14 +1126,6 @@ def _build_places_query(
           AND COALESCE(operating_status, 'open') <> 'permanently_closed'
           AND names.primary IS NOT NULL
           AND trim(names.primary) <> ''
-        ORDER BY
-            CASE WHEN
-                COALESCE(array_length(phones), 0)
-                + COALESCE(array_length(websites), 0)
-                + COALESCE(array_length(emails), 0) > 0
-            THEN 0 ELSE 1 END,
-            confidence DESC NULLS LAST,
-            names.primary
         LIMIT ?
     """
 
@@ -1407,6 +1401,7 @@ def fetch_places(
         " ".join(query.split()),
         parameters,
     )
+    t0 = time.monotonic()
     cursor = connection.execute(query, parameters)
     columns = [item[0] for item in cursor.description]
     places = [
@@ -1416,7 +1411,21 @@ def fetch_places(
         }
         for row in cursor.fetchall()
     ]
-    logger.info("Overture query returned %d records for city=%r", len(places), city)
+    elapsed = time.monotonic() - t0
+    logger.info(
+        "Overture query returned %d records for city=%r in %.1fs",
+        len(places), city, elapsed,
+    )
+    # Sort in Python instead of SQL ORDER BY.  Removing ORDER BY from the
+    # remote Parquet query allows DuckDB to stop scanning as soon as LIMIT
+    # rows pass all filters, which is dramatically faster.
+    places.sort(
+        key=lambda p: (
+            not bool(p.get("phone") or p.get("website") or p.get("email")),
+            -(float(p.get("_confidence") or 0)),
+            str(p.get("name", "")),
+        )
+    )
 
     if diagnostics or not places:
         place_diagnostics = diagnose_place_filters(

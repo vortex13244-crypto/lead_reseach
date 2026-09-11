@@ -24,6 +24,14 @@ class SearchAlreadyRunningError(RuntimeError):
     """Raised when a user attempts to start a second simultaneous search."""
 
 
+class SearchTimeoutError(RuntimeError):
+    """Raised when a search exceeds the allowed time limit."""
+
+
+# Maximum wall-clock time for one search run before it is cancelled.
+SEARCH_TIMEOUT_SECONDS = 5 * 60  # 5 minutes
+
+
 @dataclass(frozen=True, slots=True)
 class SearchResult:
     user_id: int
@@ -87,18 +95,29 @@ class LeadPipeline:
             self._running_users.add(user_id)
 
         try:
-            result = await asyncio.to_thread(
-                self._run_sync,
-                user_id,
-                niche,
-                cities,
-                limit,
-                country_code,
-                country_name,
-                regions,
-                region,
-                instagram_only=instagram_only,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._run_sync,
+                        user_id,
+                        niche,
+                        cities,
+                        limit,
+                        country_code,
+                        country_name,
+                        regions,
+                        region,
+                        instagram_only=instagram_only,
+                    ),
+                    timeout=SEARCH_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                raise SearchTimeoutError(
+                    f"Пошук перевищив ліміт часу "
+                    f"({SEARCH_TIMEOUT_SECONDS // 60} хв). "
+                    f"Спробуйте зменшити кількість компаній або звузити "
+                    f"область пошуку (конкретне місто замість всього штату)."
+                )
             previous = self._sessions.get(user_id)
             self._sessions[user_id] = result
             if previous and previous.run_dir != result.run_dir:
@@ -172,7 +191,7 @@ class LeadPipeline:
             exact_categories, category_patterns = collector.niche_filter(niche)
             collector.log_niche_resolution(niche, exact_categories, category_patterns)
             release = collector.latest_release()
-            candidate_limit = max(limit * 3, 100)
+            candidate_limit = max(limit * 2, 50)
             all_leads: list[dict[str, Any]] = []
 
             connection = collector.open_overture()

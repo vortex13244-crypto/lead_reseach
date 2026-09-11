@@ -31,6 +31,7 @@ from services.instagram_enrichment import InstagramEnrichmentService
 from services.lead_pipeline import (
     LeadPipeline,
     SearchAlreadyRunningError,
+    SearchTimeoutError,
     SearchResult,
 )
 from services.presentation import make_page
@@ -579,6 +580,11 @@ async def run_search_in_background(
     except SearchAlreadyRunningError:
         await message.answer(
             "Пошук уже виконується. Дочекайтеся завершення.",
+            reply_markup=new_search_keyboard(),
+        )
+    except SearchTimeoutError as error:
+        await message.answer(
+            str(error),
             reply_markup=new_search_keyboard(),
         )
     except Exception:
