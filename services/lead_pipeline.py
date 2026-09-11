@@ -229,7 +229,7 @@ class LeadPipeline:
                             bounds,
                             exact_categories,
                             category_patterns,
-                            candidate_limit,
+                            candidate_limit - len(all_leads),
                             country_code=query_country_code,
                             region=primary_region,
                             instagram_only=instagram_only,
@@ -240,6 +240,8 @@ class LeadPipeline:
                             len(city_leads),
                         )
                         all_leads.extend(city_leads)
+                        if len(all_leads) >= candidate_limit:
+                            break
 
                 elif parsed_regions:
                     for reg in parsed_regions:
@@ -270,7 +272,7 @@ class LeadPipeline:
                             bounds,
                             exact_categories,
                             category_patterns,
-                            candidate_limit,
+                            candidate_limit - len(all_leads),
                             country_code=query_country_code,
                             region=reg,
                             instagram_only=instagram_only,
@@ -281,6 +283,8 @@ class LeadPipeline:
                             len(reg_leads),
                         )
                         all_leads.extend(reg_leads)
+                        if len(all_leads) >= candidate_limit:
+                            break
 
                 else:
                     area_name = country_name or country_code or ""

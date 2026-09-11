@@ -1096,7 +1096,7 @@ def _build_places_query(
         country_parameters.append(country_code)
     city_expression = "COALESCE(addresses[1].locality, ?)" if country_code else "?"
     instagram_clause = (
-        "AND len(list_filter(COALESCE(websites, []), x -> x ILIKE '%instagram.com%')) > 0"
+        "AND array_to_string(COALESCE(websites, []), ' ') ILIKE '%instagram.com%'"
         if instagram_only
         else ""
     )
