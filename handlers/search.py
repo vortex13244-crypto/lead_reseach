@@ -408,7 +408,6 @@ async def receive_region(message: Message, state: FSMContext) -> None:
 @router.message(SearchForm.cities)
 async def receive_cities(message: Message, state: FSMContext) -> None:
     raw_cities = (message.text or "").strip()
-    data = await state.get_data()
 
     if raw_cities in {
         "Шукати по всій країні",
