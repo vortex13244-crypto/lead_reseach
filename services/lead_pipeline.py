@@ -29,7 +29,7 @@ class SearchTimeoutError(RuntimeError):
 
 
 # Maximum wall-clock time for one search run before it is cancelled.
-SEARCH_TIMEOUT_SECONDS = 5 * 60  # 5 minutes
+SEARCH_TIMEOUT_SECONDS = 15 * 60  # 15 minutes
 
 
 @dataclass(frozen=True, slots=True)
