@@ -22,7 +22,7 @@ from services.presentation import make_page
 
 class BotUiTest(unittest.TestCase):
     def test_aiogram_version_and_keyboards(self) -> None:
-        self.assertEqual(str(aiogram.__version__), "3.30.0")
+        self.assertEqual(str(aiogram.__version__), "3.10.0")
         self.assertEqual(main_keyboard().keyboard[0][0].text, "Новий пошук")
         self.assertEqual(cities_keyboard().keyboard[0][0].text, "Пропустити міста")
         self.assertEqual(

@@ -52,11 +52,12 @@ class InstagramStatus(StrEnum):
 class InstagramLookup:
     username: str
     followers_count: int | None
+    website: str | None
     status: InstagramStatus
 
 
 class InstagramProvider(Protocol):
-    async def get_followers(self, username: str) -> int | None:
+    async def get_followers(self, username: str) -> tuple[int | None, str | None]:
         """Return the follower count, or None when the metric is unavailable."""
 
 
@@ -77,7 +78,7 @@ class MetaGraphInstagramProvider:
         self.instagram_account_id = instagram_account_id
         self.graph_api_version = graph_api_version.strip("/")
 
-    async def get_followers(self, username: str) -> int | None:
+    async def get_followers(self, username: str) -> tuple[int | None, str | None]:
         endpoint = (
             f"https://graph.facebook.com/{self.graph_api_version}/"
             f"{self.instagram_account_id}"
@@ -85,7 +86,7 @@ class MetaGraphInstagramProvider:
         params = {
             "fields": (
                 f"business_discovery.username({username})"
-                "{followers_count}"
+                "{followers_count,website}"
             ),
             "access_token": self.access_token,
         }
@@ -103,14 +104,20 @@ class MetaGraphInstagramProvider:
                 raise InstagramProviderError(message)
 
         if not isinstance(payload, dict):
-            return None
+            return None, None
         business = payload.get("business_discovery")
         if not isinstance(business, dict):
-            return None
+            return None, None
+        
         followers = business.get("followers_count")
-        if isinstance(followers, bool) or not isinstance(followers, int):
-            return None
-        return followers if followers >= 0 else None
+        if isinstance(followers, bool) or not isinstance(followers, int) or followers < 0:
+            followers = None
+            
+        website = business.get("website")
+        if not isinstance(website, str) or not website.strip():
+            website = None
+            
+        return followers, website
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,12 +206,15 @@ class InstagramEnrichmentService:
                 isinstance(followers, bool) or not isinstance(followers, int)
             ):
                 continue
+            website = item.get("website")
+            if website is not None and not isinstance(website, str):
+                continue
             if expires_at <= now or status not in {
                 InstagramStatus.FOUND,
                 InstagramStatus.UNAVAILABLE,
             }:
                 continue
-            lookup = InstagramLookup(username, followers, status)
+            lookup = InstagramLookup(username, followers, website, status)
             cache[username.casefold()] = _CacheEntry(lookup, expires_at)
         return cache
 
@@ -214,6 +224,7 @@ class InstagramEnrichmentService:
         payload = {
             username: {
                 "followers_count": entry.lookup.followers_count,
+                "website": entry.lookup.website,
                 "status": entry.lookup.status.value,
                 "expires_at": entry.expires_at,
             }
@@ -256,7 +267,7 @@ class InstagramEnrichmentService:
 
     async def lookup_username(self, username: str) -> InstagramLookup:
         if not self.enabled or self.provider is None:
-            return InstagramLookup(username, None, InstagramStatus.NOT_CHECKED)
+            return InstagramLookup(username, None, None, InstagramStatus.NOT_CHECKED)
 
         cached = await self._cached(username)
         if cached is not None:
@@ -264,22 +275,22 @@ class InstagramEnrichmentService:
 
         try:
             async with self._semaphore:
-                followers = await asyncio.wait_for(
+                followers, website = await asyncio.wait_for(
                     self.provider.get_followers(username),
                     timeout=self.timeout_seconds,
                 )
         except TimeoutError:
-            return InstagramLookup(username, None, InstagramStatus.ERROR)
+            return InstagramLookup(username, None, None, InstagramStatus.ERROR)
         except Exception:
             logger.exception("Instagram enrichment failed for @%s", username)
-            return InstagramLookup(username, None, InstagramStatus.ERROR)
+            return InstagramLookup(username, None, None, InstagramStatus.ERROR)
 
         status = (
             InstagramStatus.FOUND
-            if followers is not None
+            if followers is not None or website is not None
             else InstagramStatus.UNAVAILABLE
         )
-        lookup = InstagramLookup(username, followers, status)
+        lookup = InstagramLookup(username, followers, website, status)
         await self._store(lookup)
         return lookup
 
@@ -312,6 +323,10 @@ class InstagramEnrichmentService:
                     row.pop("instagram_followers", None)
                 else:
                     row["instagram_followers"] = str(lookup.followers_count)
+                if lookup.website is None:
+                    row.pop("instagram_website", None)
+                else:
+                    row["instagram_website"] = lookup.website
 
         await asyncio.gather(
             *(

@@ -14,11 +14,16 @@ from config import Config
 from handlers import router
 from handlers.middleware import WhitelistMiddleware
 from services import LeadPipeline, build_instagram_enrichment
+from services.crm_db import CRMDatabase
 
 
 async def main() -> None:
     config = Config.from_env()
-    pipeline = LeadPipeline()
+
+    from pathlib import Path
+    crm_db = CRMDatabase(Path("crm_leads.db"))
+
+    pipeline = LeadPipeline(crm_db=crm_db)
     pipeline.cleanup_all()
     instagram = config.instagram
     instagram_enrichment = build_instagram_enrichment(
@@ -51,6 +56,7 @@ async def main() -> None:
             bot,
             pipeline=pipeline,
             instagram_enrichment=instagram_enrichment,
+            crm_db=crm_db,
         )
     finally:
         from handlers.search import background_tasks

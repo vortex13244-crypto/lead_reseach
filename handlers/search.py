@@ -25,8 +25,10 @@ from aiogram.types import (
 )
 
 import lead_collector as collector
+import lead_scorer
 from lead_scorer import LEAD_TYPES
 from locations import TOP_LOCATIONS
+from services.crm_db import CRMDatabase
 from services.instagram_enrichment import InstagramEnrichmentService
 from services.lead_pipeline import (
     LeadPipeline,
@@ -34,7 +36,7 @@ from services.lead_pipeline import (
     SearchTimeoutError,
     SearchResult,
 )
-from services.presentation import make_page
+from services.presentation import make_page, PAGE_SIZE
 
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
@@ -209,6 +211,7 @@ def new_search_keyboard() -> InlineKeyboardMarkup:
 def results_keyboard(
     result: SearchResult | None = None,
     view: ViewState | None = None,
+    crm_db: CRMDatabase | None = None,
 ) -> InlineKeyboardMarkup:
     current_view = view or ViewState()
     counts = (
@@ -241,6 +244,37 @@ def results_keyboard(
     type_rows = [
         type_buttons[index : index + 2] for index in range(0, len(type_buttons), 2)
     ]
+
+    # CRM contact buttons for each lead on the current page
+    contact_buttons: list[InlineKeyboardButton] = []
+    if result is not None:
+        rows = [
+            row
+            for row in result.rows
+            if (not current_view.high_only or row["priority"] == "HIGH")
+            and (current_view.lead_type is None or row.get("lead_type") == current_view.lead_type)
+        ]
+        page_num = current_view.page
+        start = page_num * PAGE_SIZE
+        chunk = rows[start : start + PAGE_SIZE]
+        contacted_ids = crm_db.get_all_contacted_ids() if crm_db else set()
+        for i, row in enumerate(chunk):
+            oid = row.get("overture_id", "")
+            if oid in contacted_ids:
+                contact_buttons.append(
+                    InlineKeyboardButton(
+                        text=f"📨 {start + i + 1}",
+                        callback_data=f"crm:done:{page_num}:{i}",
+                    )
+                )
+            else:
+                contact_buttons.append(
+                    InlineKeyboardButton(
+                        text=f"✅ {start + i + 1}",
+                        callback_data=f"crm:contact:{page_num}:{i}",
+                    )
+                )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -256,6 +290,7 @@ def results_keyboard(
                 )
             ],
             *type_rows,
+            contact_buttons,
             [InlineKeyboardButton(text="Завантажити CSV", callback_data="results:csv")],
             [InlineKeyboardButton(text="Новий пошук", callback_data="search:new")],
         ]
@@ -510,14 +545,41 @@ async def refresh_instagram_enrichment(
     result_message: Message,
     result: SearchResult,
     instagram_enrichment: InstagramEnrichmentService,
+    crm_db: CRMDatabase | None = None,
 ) -> None:
     try:
         await instagram_enrichment.enrich_rows(result.rows)
+        
+        changed = False
+        for row in result.rows:
+            ig_website = row.get("instagram_website")
+            if ig_website and not lead_scorer.is_social_or_maps(ig_website):
+                reasons = row.get("score_reasons", "")
+                if "-2: Знайдено сайт в Instagram" not in reasons:
+                    score = int(row.get("score", "0"))
+                    score -= 2
+                    row["score"] = str(score)
+                    row["priority"] = lead_scorer.priority_for(score)
+                    if "Немає факторів" in reasons or not reasons:
+                        row["score_reasons"] = "-2: Знайдено сайт в Instagram"
+                    else:
+                        row["score_reasons"] = reasons + " | -2: Знайдено сайт в Instagram"
+                    changed = True
+
+        if changed:
+            result.rows.sort(
+                key=lambda r: (
+                    lead_scorer.PRIORITY_ORDER.get(r["priority"], 2),
+                    -int(r.get("score", "0")),
+                    (r.get("name") or "").casefold(),
+                )
+            )
+
         view = view_states.get(result.user_id, ViewState())
         page = make_page(result, view.page, view.high_only, view.lead_type)
         await result_message.edit_text(
             page.text,
-            reply_markup=results_keyboard(result, view),
+            reply_markup=results_keyboard(result, view, crm_db=crm_db),
         )
     except Exception:
         logger.exception("Could not refresh Instagram enrichment")
@@ -527,6 +589,7 @@ async def send_search_result(
     message: Message,
     result: SearchResult,
     instagram_enrichment: InstagramEnrichmentService,
+    crm_db: CRMDatabase | None = None,
 ) -> None:
     view = ViewState()
     view_states[result.user_id] = view
@@ -537,7 +600,7 @@ async def send_search_result(
         await message.answer(coverage_warning)
     result_message = await message.answer(
         page.text,
-        reply_markup=results_keyboard(result, view),
+        reply_markup=results_keyboard(result, view, crm_db=crm_db),
     )
     await message.answer_document(
         FSInputFile(result.csv_path, filename="scored_leads.csv"),
@@ -550,6 +613,7 @@ async def send_search_result(
                 result_message,
                 result,
                 instagram_enrichment,
+                crm_db=crm_db,
             )
         )
         background_tasks.add(task)
@@ -568,6 +632,7 @@ async def run_search_in_background(
     country_name: str = "",
     regions: list[str] | None = None,
     instagram_only: bool = False,
+    crm_db: CRMDatabase | None = None,
 ) -> None:
     try:
         result = await pipeline.run(
@@ -580,7 +645,7 @@ async def run_search_in_background(
             regions=regions,
             instagram_only=instagram_only,
         )
-        await send_search_result(message, result, instagram_enrichment)
+        await send_search_result(message, result, instagram_enrichment, crm_db=crm_db)
     except SearchAlreadyRunningError:
         await message.answer(
             "Пошук уже виконується. Дочекайтеся завершення.",
@@ -605,6 +670,7 @@ async def run_search(
     state: FSMContext,
     pipeline: LeadPipeline,
     instagram_enrichment: InstagramEnrichmentService,
+    crm_db: CRMDatabase,
 ) -> None:
     if not callback.from_user or not callback.message:
         await callback.answer()
@@ -638,6 +704,7 @@ async def run_search(
             country_name=data["country_name"],
             regions=regions,
             instagram_only=data.get("instagram_only", False),
+            crm_db=crm_db,
         )
     )
     background_tasks.add(task)
@@ -645,7 +712,8 @@ async def run_search(
 
 
 async def update_result_message(
-    callback: CallbackQuery, pipeline: LeadPipeline, action: str
+    callback: CallbackQuery, pipeline: LeadPipeline, action: str,
+    crm_db: CRMDatabase | None = None,
 ) -> None:
     user_id = callback.from_user.id
     result = pipeline.get_result(user_id)
@@ -680,27 +748,27 @@ async def update_result_message(
         return
     await callback.message.edit_text(
         page.text,
-        reply_markup=results_keyboard(result, view),
+        reply_markup=results_keyboard(result, view, crm_db=crm_db),
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.in_({"results:next", "results:previous", "results:high"}))
-async def navigate_results(callback: CallbackQuery, pipeline: LeadPipeline) -> None:
+async def navigate_results(callback: CallbackQuery, pipeline: LeadPipeline, crm_db: CRMDatabase) -> None:
     action = (callback.data or "").partition(":")[2]
-    await update_result_message(callback, pipeline, action)
+    await update_result_message(callback, pipeline, action, crm_db=crm_db)
 
 
 @router.callback_query(F.data.startswith("results:type:"))
 async def filter_results_by_type(
-    callback: CallbackQuery, pipeline: LeadPipeline
+    callback: CallbackQuery, pipeline: LeadPipeline, crm_db: CRMDatabase,
 ) -> None:
     action = (callback.data or "").partition("results:")[2]
     selected_type = action.partition(":")[2]
     if selected_type != "ALL" and selected_type not in LEAD_TYPES:
         await callback.answer("Невідомий тип ліда.", show_alert=True)
         return
-    await update_result_message(callback, pipeline, action)
+    await update_result_message(callback, pipeline, action, crm_db=crm_db)
 
 
 @router.callback_query(F.data == "results:csv")
@@ -715,3 +783,75 @@ async def download_csv(callback: CallbackQuery, pipeline: LeadPipeline) -> None:
     await callback.message.answer_document(
         FSInputFile(result.csv_path, filename="scored_leads.csv")
     )
+
+
+@router.callback_query(F.data.startswith("crm:contact:"))
+async def crm_mark_contacted(callback: CallbackQuery, pipeline: LeadPipeline, crm_db: CRMDatabase) -> None:
+    action = (callback.data or "").partition("crm:contact:")[2]
+    page_str, _, idx_str = action.partition(":")
+    if not page_str or not idx_str:
+        await callback.answer()
+        return
+
+    result = pipeline.get_result(callback.from_user.id)
+    if not result:
+        await callback.answer("Результат застарів.", show_alert=True)
+        return
+
+    view = view_states.get(callback.from_user.id, ViewState())
+    rows = [
+        row
+        for row in result.rows
+        if (not view.high_only or row["priority"] == "HIGH")
+        and (view.lead_type is None or row.get("lead_type") == view.lead_type)
+    ]
+    start = int(page_str) * PAGE_SIZE
+    chunk = rows[start : start + PAGE_SIZE]
+    idx = int(idx_str)
+
+    if idx < len(chunk):
+        lead = chunk[idx]
+        oid = lead.get("overture_id")
+        name = lead.get("name", "")
+        if oid:
+            crm_db.mark_contacted(oid, name)
+            await callback.answer(f"✅ Відмічено: {name}")
+            # Refresh keyboard
+            if callback.message:
+                await callback.message.edit_reply_markup(
+                    reply_markup=results_keyboard(result, view, crm_db=crm_db)
+                )
+            return
+
+    await callback.answer("Помилка відмітки.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("crm:done:"))
+async def crm_already_contacted(callback: CallbackQuery) -> None:
+    await callback.answer("Ви вже відмічали цю компанію.")
+
+
+from aiogram.filters import Command
+from aiogram import Bot
+
+@router.message(Command("backup"))
+async def backup_command(message: Message, crm_db: CRMDatabase) -> None:
+    db_path = crm_db.db_path
+    if not db_path.exists():
+        await message.answer("База даних ще порожня (файл не створено).")
+        return
+    await message.answer_document(FSInputFile(db_path, filename="crm_leads.db"))
+
+
+@router.message(F.document, F.document.file_name.endswith(".db"))
+async def restore_database(message: Message, bot: Bot, crm_db: CRMDatabase) -> None:
+    if not message.document:
+        return
+    file_id = message.document.file_id
+    file = await bot.get_file(file_id)
+    if not file.file_path:
+        return
+    
+    destination = crm_db.db_path
+    await bot.download_file(file.file_path, destination)
+    await message.answer("✅ Базу даних успішно відновлено!")

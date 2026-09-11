@@ -85,6 +85,12 @@ def _company_text(row: dict[str, str], number: int) -> str:
             if followers_count is not None and followers_count >= 0:
                 formatted_followers = f"{followers_count:,}".replace(",", " ")
                 instagram += f"\nПідписники: {formatted_followers}"
+            
+            ig_website = _clean(row.get("instagram_website"))
+            if ig_website:
+                ig_safe = _safe_link(ig_website)
+                if ig_safe:
+                    instagram += f'\n⚠️ <b>Увага:</b> В Інстаграмі вказано сайт: <a href="{html.escape(ig_safe, quote=True)}">{html.escape(_short(ig_website, 60))}</a>'
 
     return (
         f"<b>{number}. {name}</b>\n"

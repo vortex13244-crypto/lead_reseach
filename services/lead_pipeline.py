@@ -32,14 +32,14 @@ class SearchTimeoutError(RuntimeError):
 SEARCH_TIMEOUT_SECONDS = 15 * 60  # 15 minutes
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SearchResult:
     user_id: int
     niche: str
-    cities: tuple[str, ...]
+    cities: list[str]
     requested_limit: int
     source_release: str
-    rows: tuple[dict[str, str], ...]
+    rows: list[dict[str, str]]
     csv_path: Path
     run_dir: Path
     high: int
@@ -57,10 +57,11 @@ class SearchResult:
 class LeadPipeline:
     """Run collection and scoring in a worker thread and manage run files."""
 
-    def __init__(self, temp_root: Path | None = None) -> None:
+    def __init__(self, temp_root: Path | None = None, crm_db: 'CRMDatabase | None' = None) -> None:
         self.temp_root = temp_root or (
             Path(tempfile.gettempdir()) / "overture_lead_bot_runs"
         )
+        self.crm_db = crm_db
         self._running_users: set[int] = set()
         self._sessions: dict[int, SearchResult] = {}
         self._cancel_events: dict[int, threading.Event] = {}
@@ -341,6 +342,17 @@ class LeadPipeline:
                 connection.close()
 
             unique_leads = collector.deduplicate(all_leads)
+            
+            if self.crm_db is not None:
+                contacted_ids = self.crm_db.get_all_contacted_ids()
+                if contacted_ids:
+                    before_filter = len(unique_leads)
+                    unique_leads = [
+                        p for p in unique_leads 
+                        if p.get("overture_id") not in contacted_ids
+                    ]
+                    logger.info("CRM filtered out %d already contacted leads", before_filter - len(unique_leads))
+
             leads = collector.select_leads(unique_leads, limit)
             logger.info(
                 "Lead search finalized: fetched=%d after_deduplication=%d "
@@ -359,10 +371,10 @@ class LeadPipeline:
             return SearchResult(
                 user_id=user_id,
                 niche=niche,
-                cities=tuple(parsed_cities),
+                cities=parsed_cities,
                 requested_limit=limit,
                 source_release=release,
-                rows=tuple(scored_rows),
+                rows=scored_rows,
                 csv_path=scored_csv,
                 run_dir=run_dir,
                 high=counts["HIGH"],
