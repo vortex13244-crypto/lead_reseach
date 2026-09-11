@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from .instagram_enrichment import InstagramStatus
 from .lead_pipeline import SearchResult
 
-PAGE_SIZE = 10
+PAGE_SIZE = 5
 
 
 @dataclass(frozen=True, slots=True)

@@ -245,9 +245,9 @@ def results_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Попередні 10", callback_data="results:previous"
+                    text="Попередні 5", callback_data="results:previous"
                 ),
-                InlineKeyboardButton(text="Наступні 10", callback_data="results:next"),
+                InlineKeyboardButton(text="Наступні 5", callback_data="results:next"),
             ],
             [
                 InlineKeyboardButton(
