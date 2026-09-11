@@ -53,6 +53,11 @@ async def main() -> None:
             instagram_enrichment=instagram_enrichment,
         )
     finally:
+        from handlers.search import background_tasks
+        for task in background_tasks:
+            task.cancel()
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
         pipeline.cleanup_all()
 
 

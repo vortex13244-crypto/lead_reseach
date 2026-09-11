@@ -464,6 +464,11 @@ async def receive_limit(message: Message, state: FSMContext) -> None:
         await message.answer("Ліміт має бути цілим числом, більшим за нуль.")
         return
 
+    max_limit = 3000
+    if limit > max_limit:
+        await message.answer(f"Максимальний ліміт — {max_limit} компаній.")
+        return
+
     await state.update_data(limit=limit)
     await state.set_state(SearchForm.instagram_only)
     await message.answer(

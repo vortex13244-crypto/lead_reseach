@@ -936,6 +936,8 @@ def open_overture() -> duckdb.DuckDBPyConnection:
     connection = duckdb.connect()
     connection.execute("INSTALL httpfs")
     connection.execute("LOAD httpfs")
+    # Limit DuckDB memory to prevent OOM on Railway (512 MB container).
+    connection.execute("SET memory_limit='200MB'")
     # Cache S3/parquet metadata so repeated queries skip redundant HTTP calls.
     connection.execute("SET enable_object_cache=true")
     return connection

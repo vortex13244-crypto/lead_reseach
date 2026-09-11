@@ -63,6 +63,7 @@ class LeadPipeline:
         )
         self._running_users: set[int] = set()
         self._sessions: dict[int, SearchResult] = {}
+        self._cancel_events: dict[int, threading.Event] = {}
         self._state_lock = asyncio.Lock()
         self._geocode_lock = threading.Lock()
         self._last_geocode_at = 0.0
@@ -94,6 +95,8 @@ class LeadPipeline:
                 )
             self._running_users.add(user_id)
 
+        cancel_event = threading.Event()
+        self._cancel_events[user_id] = cancel_event
         try:
             try:
                 result = await asyncio.wait_for(
@@ -108,10 +111,12 @@ class LeadPipeline:
                         regions,
                         region,
                         instagram_only=instagram_only,
+                        cancel_event=cancel_event,
                     ),
                     timeout=SEARCH_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
+                cancel_event.set()
                 raise SearchTimeoutError(
                     f"Пошук перевищив ліміт часу "
                     f"({SEARCH_TIMEOUT_SECONDS // 60} хв). "
@@ -124,6 +129,7 @@ class LeadPipeline:
                 shutil.rmtree(previous.run_dir, ignore_errors=True)
             return result
         finally:
+            self._cancel_events.pop(user_id, None)
             async with self._state_lock:
                 self._running_users.discard(user_id)
 
@@ -177,6 +183,7 @@ class LeadPipeline:
         regions: list[str] | None = None,
         region: str = "",
         instagram_only: bool = False,
+        cancel_event: threading.Event | None = None,
     ) -> SearchResult:
         run_dir = self.temp_root / str(user_id) / uuid.uuid4().hex
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -201,6 +208,9 @@ class LeadPipeline:
                         parsed_regions[0] if len(parsed_regions) == 1 else ""
                     )
                     for city in parsed_cities:
+                        if cancel_event and cancel_event.is_set():
+                            logger.info("Search cancelled for user %d", user_id)
+                            break
                         if (
                             country_code == collector.UKRAINE_COUNTRY_CODE
                             and collector.is_ukraine_scope(city)
@@ -242,9 +252,15 @@ class LeadPipeline:
                         all_leads.extend(city_leads)
                         if len(all_leads) >= candidate_limit:
                             break
+                        # Reset connection to free DuckDB memory cache
+                        connection.close()
+                        connection = collector.open_overture()
 
                 elif parsed_regions:
                     for reg in parsed_regions:
+                        if cancel_event and cancel_event.is_set():
+                            logger.info("Search cancelled for user %d", user_id)
+                            break
                         if (
                             country_code == collector.UKRAINE_COUNTRY_CODE
                             and collector.is_ukraine_scope(reg)
@@ -285,6 +301,9 @@ class LeadPipeline:
                         all_leads.extend(reg_leads)
                         if len(all_leads) >= candidate_limit:
                             break
+                        # Reset connection to free DuckDB memory cache
+                        connection.close()
+                        connection = collector.open_overture()
 
                 else:
                     area_name = country_name or country_code or ""

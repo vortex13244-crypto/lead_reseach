@@ -91,8 +91,11 @@ def split_values(value: str) -> list[str]:
 
 
 def hostname(url: str) -> str:
-    parsed = urlparse(url if "://" in url else f"//{url}")
-    return (parsed.hostname or "").casefold().removeprefix("www.")
+    try:
+        parsed = urlparse(url if "://" in url else f"//{url}")
+        return (parsed.hostname or "").casefold().removeprefix("www.")
+    except (ValueError, AttributeError):
+        return ""
 
 
 def domain_matches(host: str, domain: str) -> bool:
