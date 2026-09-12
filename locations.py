@@ -2,16 +2,16 @@
 
 TOP_LOCATIONS = {
     "US": {
-        "California": ["Los Angeles", "San Francisco", "San Diego", "San Jose", "Sacramento"],
-        "Texas": ["Houston", "Austin", "Dallas", "San Antonio", "Fort Worth"],
-        "New York": ["New York City", "Buffalo", "Rochester", "Albany", "Syracuse"],
-        "Florida": ["Miami", "Orlando", "Tampa", "Jacksonville", "Fort Lauderdale"],
-        "Massachusetts": ["Boston", "Cambridge", "Worcester", "Springfield", "Newton"],
-        "Washington": ["Seattle", "Bellevue", "Tacoma", "Spokane", "Redmond"],
-        "New Jersey": ["Newark", "Jersey City", "Princeton", "Edison", "Trenton"],
-        "Illinois": ["Chicago", "Naperville", "Evanston", "Schaumburg", "Oak Brook"],
-        "Colorado": ["Denver", "Boulder", "Colorado Springs", "Fort Collins", "Aurora"],
-        "Virginia": ["Arlington", "Alexandria", "Richmond", "Virginia Beach", "Fairfax"],
+        "Каліфорнія": ["Лос-Анджелес", "Сан-Франциско", "Сан-Дієго", "Сан-Хосе", "Сакраменто"],
+        "Техас": ["Х'юстон", "Остін", "Даллас", "Сан-Антоніо", "Форт-Верт"],
+        "Нью-Йорк": ["Нью-Йорк", "Баффало", "Рочестер", "Олбані", "Сірак'юс"],
+        "Флорида": ["Маямі", "Орландо", "Тампа", "Джексонвілл", "Форт-Лодердейл"],
+        "Массачусетс": ["Бостон", "Кембридж", "Вустер", "Спрінгфілд", "Ньютон"],
+        "Вашингтон": ["Сіетл", "Беллв'ю", "Такома", "Спокан", "Редмонд"],
+        "Нью-Джерсі": ["Ньюарк", "Джерсі-Сіті", "Прінстон", "Едісон", "Трентон"],
+        "Іллінойс": ["Чикаго", "Нейпервілл", "Еванстон", "Шамбург", "Оук-Брук"],
+        "Колорадо": ["Денвер", "Боулдер", "Колорадо-Спрінгс", "Форт-Коллінс", "Орора"],
+        "Вірджинія": ["Арлінгтон", "Александрія", "Річмонд", "Вірджинія-Біч", "Ферфакс"],
     },
     "GB": {
         "London": ["London", "Westminster", "Camden", "Islington", "Richmond"],
