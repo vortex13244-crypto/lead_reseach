@@ -103,8 +103,11 @@ def main_keyboard() -> ReplyKeyboardMarkup:
 
 
 def cities_keyboard(
-    country_code: str | None = None, regions: list[str] | None = None
+    country_code: str | None = None,
+    regions: list[str] | None = None,
+    selected_cities: list[str] | None = None,
 ) -> ReplyKeyboardMarkup:
+    selected = selected_cities or []
     buttons: list[KeyboardButton] = []
     reg_list = [r for r in (regions or []) if r]
     if country_code and country_code in TOP_LOCATIONS and reg_list:
@@ -121,11 +124,14 @@ def cities_keyboard(
                 for city in cities_list:
                     if city not in seen_cities:
                         seen_cities.add(city)
-                        buttons.append(KeyboardButton(text=city))
+                        text = f"✅ {city}" if city in selected else city
+                        buttons.append(KeyboardButton(text=text))
 
     keyboard: list[list[KeyboardButton]] = [
         buttons[i : i + 2] for i in range(0, len(buttons), 2)
     ]
+    if selected:
+        keyboard.append([KeyboardButton(text="➡️ Продовжити з обраними")])
     if reg_list:
         keyboard.append([KeyboardButton(text="Шукати по обраних регіонах")])
         keyboard.append([KeyboardButton(text="Шукати по всій країні")])
@@ -135,7 +141,7 @@ def cities_keyboard(
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
         resize_keyboard=True,
-        one_time_keyboard=True,
+        one_time_keyboard=False,
     )
 
 
@@ -430,7 +436,7 @@ async def receive_region(message: Message, state: FSMContext) -> None:
         await message.answer(
             f"Обрано регіони: {', '.join(typed_regions)}.\n"
             "Оберіть місто з кнопок нижче, введіть свої через кому, або натисніть «Шукати по обраних регіонах».",
-            reply_markup=cities_keyboard(country_code, typed_regions),
+            reply_markup=cities_keyboard(country_code, typed_regions, []),
         )
         return
 
@@ -443,6 +449,21 @@ async def receive_region(message: Message, state: FSMContext) -> None:
 @router.message(SearchForm.cities)
 async def receive_cities(message: Message, state: FSMContext) -> None:
     raw_cities = (message.text or "").strip()
+    data = await state.get_data()
+    country_code = data.get("country_code")
+    current_regions = data.get("regions", [])
+    current_cities = data.get("cities", [])
+
+    if raw_cities.startswith("➡️ Продовжити"):
+        if not current_cities:
+            await message.answer("Ви не обрали жодного міста.")
+            return
+        await state.set_state(SearchForm.niche)
+        await message.answer(
+            "Введіть нішу, наприклад: Dental або автосервіс.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
 
     if raw_cities in {
         "Шукати по всій країні",
@@ -450,28 +471,94 @@ async def receive_cities(message: Message, state: FSMContext) -> None:
         collector.WHOLE_COUNTRY_SCOPE_NAME,
     }:
         cities: list[str] = []
-        await state.update_data(regions=[])
+        await state.update_data(regions=[], cities=[])
+        await state.set_state(SearchForm.niche)
+        await message.answer(
+            "Введіть нішу, наприклад: Dental або автосервіс.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
     elif raw_cities in {
         "Шукати по обраних регіонах",
         "Пропустити міста",
     }:
         cities = []
-    else:
-        try:
-            cities = collector.parse_cities(raw_cities)
-            if cities == [collector.WHOLE_COUNTRY_SCOPE_NAME]:
-                cities = []
-                await state.update_data(regions=[])
-        except ValueError as error:
-            await message.answer(f"Некоректний список міст: {error}")
-            return
+        await state.update_data(cities=[])
+        await state.set_state(SearchForm.niche)
+        await message.answer(
+            "Введіть нішу, наприклад: Dental або автосервіс.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
 
-    await state.update_data(cities=cities)
-    await state.set_state(SearchForm.niche)
-    await message.answer(
-        "Введіть нішу, наприклад: Dental або автосервіс.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+    clean_text = raw_cities.removeprefix("✅ ").strip()
+    
+    known_cities = set()
+    if country_code and country_code in TOP_LOCATIONS and current_regions:
+        country_regions = TOP_LOCATIONS[country_code]
+        for r_name in current_regions:
+            cities_list = country_regions.get(r_name)
+            if not cities_list:
+                for reg_key, c_list in country_regions.items():
+                    if reg_key.lower() == r_name.lower():
+                        cities_list = c_list
+                        break
+            if cities_list:
+                for c in cities_list:
+                    known_cities.add(c.lower())
+                    
+    matched_city = None
+    if clean_text.lower() in known_cities:
+        # Find exact case from TOP_LOCATIONS
+        for r_name in current_regions:
+            cities_list = TOP_LOCATIONS[country_code].get(r_name)
+            if not cities_list:
+                for reg_key, c_list in TOP_LOCATIONS[country_code].items():
+                    if reg_key.lower() == r_name.lower():
+                        cities_list = c_list
+                        break
+            if cities_list:
+                for c in cities_list:
+                    if c.lower() == clean_text.lower():
+                        matched_city = c
+                        break
+            if matched_city:
+                break
+
+    if matched_city:
+        if matched_city in current_cities:
+            current_cities.remove(matched_city)
+        else:
+            current_cities.append(matched_city)
+        await state.update_data(cities=current_cities)
+        count = len(current_cities)
+        status_text = (
+            f"Обрано ({count}): {', '.join(current_cities)}.\n"
+            "Можете обрати ще одне місто, або натисніть «➡️ Продовжити з обраними»."
+            if count
+            else "Вибір очищено. Оберіть місто або натисніть «Шукати по обраних регіонах»."
+        )
+        await message.answer(
+            status_text,
+            reply_markup=cities_keyboard(country_code, current_regions, current_cities),
+        )
+        return
+
+    try:
+        cities = collector.parse_cities(raw_cities)
+        if cities == [collector.WHOLE_COUNTRY_SCOPE_NAME]:
+            cities = []
+            await state.update_data(regions=[])
+        
+        await state.update_data(cities=cities)
+        await state.set_state(SearchForm.niche)
+        await message.answer(
+            "Введіть нішу, наприклад: Dental або автосервіс.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    except ValueError as error:
+        await message.answer(f"Некоректний список міст: {error}")
+        return
 
 
 @router.message(SearchForm.niche)
