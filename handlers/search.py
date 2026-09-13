@@ -10,7 +10,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -942,3 +942,15 @@ async def restore_database(message: Message, bot: Bot, crm_db: CRMDatabase) -> N
     destination = crm_db.db_path
     await bot.download_file(file.file_path, destination)
     await message.answer("✅ Базу даних успішно відновлено!")
+
+
+@router.message(StateFilter(None))
+async def fallback_no_state(
+    message: Message, state: FSMContext, pipeline: LeadPipeline
+) -> None:
+    """Catch-all: handles messages when the bot lost FSM state (e.g. after a restart)."""
+    await message.answer(
+        "🔄 Схоже, бот перезапустився і втратив стан розмови.\n"
+        "Натисніть «Новий пошук» або напишіть /start, щоб почати заново.",
+        reply_markup=main_keyboard(),
+    )
