@@ -16,6 +16,7 @@ from typing import Any
 
 import lead_collector as collector
 import lead_scorer as scorer
+from locations import CITY_NAME_TRANSLATIONS, REGION_NAME_TRANSLATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -141,16 +142,19 @@ class LeadPipeline:
         country_name: str = "",
         region: str = "",
     ) -> tuple[float, float, float, float]:
+        # Translate localized city/region names to English for Nominatim
+        city_en = CITY_NAME_TRANSLATIONS.get(city, city)
+        region_en = REGION_NAME_TRANSLATIONS.get(region, region) if region else region
         # The public Nominatim policy permits at most one request per second.
         with self._geocode_lock:
             delay = 1.0 - (time.monotonic() - self._last_geocode_at)
             if delay > 0:
                 time.sleep(delay)
             bounds = collector.geocode_city(
-                city,
+                city_en,
                 country_code=country_code,
                 country_name=country_name,
-                region=region,
+                region=region_en,
             )
             self._last_geocode_at = time.monotonic()
             return bounds

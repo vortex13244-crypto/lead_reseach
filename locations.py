@@ -110,3 +110,82 @@ TOP_LOCATIONS = {
         "Poltava Oblast": ["Poltava", "Kremenchuk", "Lubny", "Myrhorod", "Horishni Plavni"],
     },
 }
+
+# Maps Ukrainian/localized city names to English for geocoding (Nominatim only understands English)
+CITY_NAME_TRANSLATIONS: dict[str, str] = {
+    # California
+    "Лос-Анджелес": "Los Angeles",
+    "Сан-Франциско": "San Francisco",
+    "Сан-Дієго": "San Diego",
+    "Сан-Хосе": "San Jose",
+    "Сакраменто": "Sacramento",
+    "Беверлі-Гіллз": "Beverly Hills",
+    # Texas
+    "Х'юстон": "Houston",
+    "Остін": "Austin",
+    "Даллас": "Dallas",
+    "Сан-Антоніо": "San Antonio",
+    "Форт-Верт": "Fort Worth",
+    # New York
+    "Нью-Йорк": "New York City",
+    "Баффало": "Buffalo",
+    "Рочестер": "Rochester",
+    "Олбані": "Albany",
+    "Сірак'юс": "Syracuse",
+    # Florida
+    "Маямі": "Miami",
+    "Орландо": "Orlando",
+    "Тампа": "Tampa",
+    "Джексонвілл": "Jacksonville",
+    "Форт-Лодердейл": "Fort Lauderdale",
+    # Massachusetts
+    "Бостон": "Boston",
+    "Кембрідж": "Cambridge",
+    "Вустер": "Worcester",
+    "Спрінгфілд": "Springfield",
+    "Ньютон": "Newton",
+    # Washington
+    "Сіетл": "Seattle",
+    "Беллв'ю": "Bellevue",
+    "Такома": "Tacoma",
+    "Спокан": "Spokane",
+    "Редмонд": "Redmond",
+    # New Jersey
+    "Ньюарк": "Newark",
+    "Джерсі-Сіті": "Jersey City",
+    "Прінстон": "Princeton",
+    "Едісон": "Edison",
+    "Трентон": "Trenton",
+    # Illinois
+    "Чикаго": "Chicago",
+    "Нейпервілл": "Naperville",
+    "Еванстон": "Evanston",
+    "Шамбург": "Schaumburg",
+    "Оук-Брук": "Oak Brook",
+    # Colorado
+    "Денвер": "Denver",
+    "Боулдер": "Boulder",
+    "Колорадо-Спрінгс": "Colorado Springs",
+    "Форт-Коллінс": "Fort Collins",
+    "Орора": "Aurora",
+    # Virginia
+    "Арлінгтон": "Arlington",
+    "Александрія": "Alexandria",
+    "Річмонд": "Richmond",
+    "Вірджинія-Біч": "Virginia Beach",
+    "Ферфакс": "Fairfax",
+}
+
+# Maps Ukrainian/localized region names to English for geocoding
+REGION_NAME_TRANSLATIONS: dict[str, str] = {
+    "Каліфорнія": "California",
+    "Техас": "Texas",
+    "Нью-Йорк": "New York",
+    "Флорида": "Florida",
+    "Массачусетс": "Massachusetts",
+    "Вашингтон": "Washington",
+    "Нью-Джерсі": "New Jersey",
+    "Іллінойс": "Illinois",
+    "Колорадо": "Colorado",
+    "Вірджинія": "Virginia",
+}
