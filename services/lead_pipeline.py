@@ -346,16 +346,6 @@ class LeadPipeline:
                 connection.close()
 
             unique_leads = collector.deduplicate(all_leads)
-            
-            if self.crm_db is not None:
-                contacted_ids = self.crm_db.get_all_contacted_ids()
-                if contacted_ids:
-                    before_filter = len(unique_leads)
-                    unique_leads = [
-                        p for p in unique_leads 
-                        if p.get("overture_id") not in contacted_ids
-                    ]
-                    logger.info("CRM filtered out %d already contacted leads", before_filter - len(unique_leads))
 
             leads = collector.select_leads(unique_leads, limit)
             logger.info(
