@@ -200,7 +200,16 @@ class LeadPipeline:
                 r.strip() for r in (regions or ([region] if region else [])) if r.strip()
             ]
             parsed_cities = collector.parse_cities(",".join(cities)) if cities else []
-            exact_categories, category_patterns = collector.niche_filter(niche)
+            # Support comma-separated niches
+            niche_parts = [p.strip() for p in niche.split(",") if p.strip()]
+            all_exact: list[str] = []
+            all_patterns: list[str] = []
+            for niche_part in niche_parts:
+                ex, pat = collector.niche_filter(niche_part)
+                all_exact.extend(ex)
+                all_patterns.extend(pat)
+            exact_categories = tuple(dict.fromkeys(all_exact))
+            category_patterns = tuple(dict.fromkeys(all_patterns))
             collector.log_niche_resolution(niche, exact_categories, category_patterns)
             release = collector.latest_release()
             candidate_limit = max(limit * 2, 50)

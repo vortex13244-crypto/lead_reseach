@@ -575,10 +575,19 @@ async def receive_niche(message: Message, state: FSMContext) -> None:
     if not niche:
         await message.answer("Ніша не може бути порожньою. Спробуйте ще раз.")
         return
-    try:
-        collector.niche_filter(niche)
-    except ValueError as error:
-        await message.answer(f"Не вдалося розпізнати нішу: {error}")
+    # Support comma-separated niches: "салон краси, манікюр, барбершоп"
+    parts = [part.strip() for part in niche.split(",") if part.strip()]
+    errors: list[str] = []
+    for part in parts:
+        try:
+            collector.niche_filter(part)
+        except ValueError as error:
+            errors.append(f"«{part}»: {error}")
+    if errors:
+        await message.answer(
+            "Не вдалося розпізнати деякі ніші:\n"
+            + "\n".join(errors)
+        )
         return
     await state.update_data(niche=niche)
     await state.set_state(SearchForm.limit)
