@@ -173,7 +173,7 @@ def region_keyboard(
         keyboard.append(
             [KeyboardButton(text=f"➡️ Продовжити з обраними ({len(selected)})")]
         )
-        keyboard.append([KeyboardButton(text="Скинути вибір / Пропустити")])
+        keyboard.append([KeyboardButton(text="Скинути вибір")])
     else:
         keyboard.append([KeyboardButton(text="Пропустити регіон")])
 
@@ -382,7 +382,15 @@ async def receive_region(message: Message, state: FSMContext) -> None:
     country_code = data.get("country_code")
     current_regions: list[str] = list(data.get("regions") or [])
 
-    if raw_text in {"Пропустити регіон", "Скинути вибір / Пропустити"}:
+    if raw_text == "Скинути вибір":
+        await state.update_data(regions=[])
+        await message.answer(
+            "Вибір очищено. Оберіть регіони або натисніть «Пропустити регіон».",
+            reply_markup=region_keyboard(country_code, []),
+        )
+        return
+
+    if raw_text == "Пропустити регіон":
         await state.update_data(regions=[])
         await state.set_state(SearchForm.cities)
         await message.answer(
