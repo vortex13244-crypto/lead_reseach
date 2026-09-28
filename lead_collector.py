@@ -1003,36 +1003,28 @@ def _category_filter_sql(
             "("
             f"taxonomy.primary IN ({placeholders}) "
             f"OR basic_category IN ({placeholders}) "
-            f"OR categories.primary IN ({placeholders}) "
             "OR list_has_any("
             "COALESCE(taxonomy.hierarchy, []::VARCHAR[]), ?::VARCHAR[]"
             ") "
             "OR list_has_any("
             "COALESCE(taxonomy.alternates, []::VARCHAR[]), ?::VARCHAR[]"
-            ") "
-            "OR list_has_any("
-            "COALESCE(categories.alternate, []::VARCHAR[]), ?::VARCHAR[]"
             ")"
             ")"
         )
-        for _field in range(3):
+        for _field in range(2):
             parameters.extend(exact_categories)
-        parameters.extend([list(exact_categories)] * 3)
+        parameters.extend([list(exact_categories)] * 2)
 
     category_text = """
         concat_ws(
             ',',
             taxonomy.primary,
             basic_category,
-            categories.primary,
             array_to_string(
                 COALESCE(taxonomy.hierarchy, []::VARCHAR[]), ','
             ),
             array_to_string(
                 COALESCE(taxonomy.alternates, []::VARCHAR[]), ','
-            ),
-            array_to_string(
-                COALESCE(categories.alternate, []::VARCHAR[]), ','
             )
         )
     """
@@ -1101,7 +1093,7 @@ def _build_places_query(
     parquet_path = (
         f"s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*"
     )
-    category = "COALESCE(taxonomy.primary, basic_category, categories.primary)"
+    category = "COALESCE(taxonomy.primary, basic_category)"
     category_filter, category_parameters = _category_filter_sql(
         exact_categories, category_patterns
     )
