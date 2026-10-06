@@ -9,8 +9,8 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 
-from aiogram import F, Router
-from aiogram.filters import CommandStart, StateFilter
+from aiogram import F, Router, Bot
+from aiogram.filters import CommandStart, StateFilter, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -319,11 +319,39 @@ async def begin_search(
 
 
 @router.message(CommandStart())
-async def command_start(message: Message) -> None:
+async def command_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer(
         "Бот збирає компанії через Overture Maps і виконує локальний скоринг.",
         reply_markup=main_keyboard(),
     )
+
+
+@router.message(Command("backup"))
+async def backup_command(message: Message, state: FSMContext, crm_db: CRMDatabase) -> None:
+    await state.clear()
+    db_path = crm_db.db_path
+    if not db_path.exists():
+        await message.answer("База даних ще порожня (файл не створено).")
+        return
+    await message.answer_document(FSInputFile(db_path, filename="crm_leads.db"))
+
+
+@router.message(F.document, F.document.file_name.endswith(".db"))
+async def restore_database(message: Message, bot: Bot, state: FSMContext, crm_db: CRMDatabase) -> None:
+    await state.clear()
+    if not message.document:
+        return
+    file_id = message.document.file_id
+    file = await bot.get_file(file_id)
+    if not file.file_path:
+        return
+    
+    destination = crm_db.db_path
+    await bot.download_file(file.file_path, destination)
+    # Re-initialize CRMDatabase to load the new data
+    crm_db.__init__(destination)
+    await message.answer("✅ Базу даних успішно відновлено!")
 
 
 @router.message(F.text == "Новий пошук")
@@ -935,30 +963,7 @@ async def crm_already_contacted(callback: CallbackQuery) -> None:
     await callback.answer("Ви вже відмічали цю компанію.")
 
 
-from aiogram.filters import Command
-from aiogram import Bot
 
-@router.message(Command("backup"))
-async def backup_command(message: Message, crm_db: CRMDatabase) -> None:
-    db_path = crm_db.db_path
-    if not db_path.exists():
-        await message.answer("База даних ще порожня (файл не створено).")
-        return
-    await message.answer_document(FSInputFile(db_path, filename="crm_leads.db"))
-
-
-@router.message(F.document, F.document.file_name.endswith(".db"))
-async def restore_database(message: Message, bot: Bot, crm_db: CRMDatabase) -> None:
-    if not message.document:
-        return
-    file_id = message.document.file_id
-    file = await bot.get_file(file_id)
-    if not file.file_path:
-        return
-    
-    destination = crm_db.db_path
-    await bot.download_file(file.file_path, destination)
-    await message.answer("✅ Базу даних успішно відновлено!")
 
 
 @router.message(StateFilter(None))
